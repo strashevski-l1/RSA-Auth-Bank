@@ -71,7 +71,7 @@ class Account(BaseEntity):
     
     def change_balance(self, bank: Bank, new_balance: int) -> bool:
         if not(isinstance(bank, Bank)):
-            raise TypeErrorError("Non Bank can`t update account balance")
+            raise TypeError("Non Bank can`t update account balance")
         if (new_balance < 0):
             raise ValueError("New balance cant be negative")
         self._balance = new_balance
