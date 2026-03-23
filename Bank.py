@@ -1,5 +1,6 @@
+from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import List, Dict, ClassVar
+from typing import List, Dict, ClassVar, NewType
 from cryptography.hazmat.primitives import hashes
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
@@ -11,29 +12,29 @@ from cryptography.hazmat.primitives.serialization import (
 from abc import ABC
 import uuid
 
-from Bank import Bank
+
+EntityID = NewType("EnityID", str)
 
 @dataclass
 class BaseEntity(ABC):
     PREFIX: ClassVar[str] = "GEN"
-    _id: str = field(init=False)
+    _id: EntityID = field(init=False)
     
     def __post_init__(self):
-        self._id = f"{self.PREFIX}-{str(uuid.uuid4())[:8]}"
-
+        self._id = EntityID(f"{self.PREFIX}-{str(uuid.uuid4())[:8]}")
     @property
-    def id(self) -> str:
+    def id(self) -> EntityID:
         return self._id 
 
 @dataclass
 class Transaction(BaseEntity):
     PREFIX: ClassVar[str] = "TRN"
 
-    _sender_id: str
-    _receiver_id: str
+    _sender_id: EntityID
+    _receiver_id: EntityID
     _amount: int
     _status: str = "PENDING"
-    _signatures: Dict[str, bytes] = field(default_factory=dict)
+    _signatures: Dict[EntityID, bytes] = field(default_factory=dict)
     _comment: str = ""
 
     @property
@@ -43,7 +44,7 @@ class Transaction(BaseEntity):
     def canonical_data(self) -> str:
         return f"{self._id}:{self._sender_id}:{self._receiver_id}:{self._amount}"
     
-    def add_signature(self, account_id: str, signature: bytes) -> None:
+    def add_signature(self, account_id: EntityID, signature: bytes) -> None:
         if self._status != "PENDING":
             raise ValueError("You cant sign non PENDING tx")
         self._signatures[account_id] = signature
@@ -83,7 +84,7 @@ class ClientDevice:
     _private_key: rsa.RSAPrivateKey
     public_key: rsa.RSAPublicKey
 
-    accounts: List[str] = field(default_factory=list) # Добавить логику добавления, и сделать метод проверки владения на стороне Банка
+    accounts: List[EntityID] = field(default_factory=list) # Добавить логику добавления, и сделать метод проверки владения на стороне Банка
 
     @classmethod
     def generate(cls, key_size: int = 2048) -> "ClientDevice":
@@ -121,17 +122,17 @@ class ClientDevice:
 
 class Bank:
     def __init__(self):
-        self._accounts: Dict[str, Account] = {}
+        self._accounts: Dict[EntityID, Account] = {}
         self._transactions: List[Transaction] = []
     
-    def create_account(self, public_key: rsa.RSAPublicKey) -> Account:
+    def create_account(self, public_key: rsa.RSAPublicKey) -> EntityID:
         if not (isinstance(public_key, rsa.RSAPublicKey)):
             raise TypeError("Public_key needs to be an RSAPublickey type")
         new_acc = Account(_public_key = public_key)
         self._accounts[new_acc.id] = new_acc
-        return new_acc
+        return new_acc.id
     
-    def init_transaction(self, sender_id: str, receiver_id: str, amount: int, comment: str = "") -> Transaction:
+    def init_transaction(self, sender_id: EntityID, receiver_id: EntityID, amount: int, comment: str = "") -> Transaction:
         if not (sender_id in self._accounts and receiver_id in self._accounts):
             raise ValueError("Sender or receiver does not exist")
         new_transaction = Transaction(
@@ -142,7 +143,7 @@ class Bank:
             )
         self._transactions.append(new_transaction)
         return new_transaction
-    def _verify_signature(self, transaction: Transaction, account_id: str) -> bool:
+    def _verify_signature(self, transaction: Transaction, account_id: EntityID) -> bool:
         if not(account_id in self._accounts):
             raise ValueError("Account does not exist")
         transaction_signature = transaction._signatures.get(account_id)
@@ -209,7 +210,7 @@ class Bank:
         transaction._status = "COMPLETED"
         return True
 
-    def verify_ownership(self, account_id: str, device_public_key_pem: bytes) -> bool:
+    def verify_ownership(self, account_id: EntityID, device_public_key_pem: bytes) -> bool:
         if not(isinstance(device_public_key_pem, bytes)):
             raise TypeError("Device public key must be an bytes object")
         if (account_id not in self._accounts):
